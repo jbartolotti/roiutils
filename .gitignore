@@ -1,0 +1,23 @@
+# Python cache and artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+
+# Local editor config
+.vscode/
+
+# Local virtual environments / local package installs
+.venv/
+venv/
+env/
+pyvenv.cfg
+Lib/
+Scripts/
+share/

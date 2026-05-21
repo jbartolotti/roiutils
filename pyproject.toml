@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roiutils"
+version = "0.1.0"
+description = "Utilities for creating, manipulating, and visualizing neuroimaging ROIs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "roiutils contributors" }
+]
+dependencies = [
+  "numpy>=1.24",
+  "nibabel>=5.0",
+  "nilearn>=0.10",
+  "pandas>=2.0",
+  "matplotlib>=3.8"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0"
+]
+
+[project.scripts]
+roiutils = "roiutils.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
