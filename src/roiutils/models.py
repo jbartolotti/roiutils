@@ -34,4 +34,30 @@ class SelectionConfig:
     strict: bool = True
 
 
+@dataclass
+class RenderConfig:
+    """Configuration for ROI overlay rendering."""
+
+    display_mode: str = "z"
+    """Slice plane(s): 'ortho', 'x', 'y', 'z', 'tiled'."""
+
+    cut_coords: int | tuple | None = 7
+    """Number of evenly-spaced cuts (int), specific MNI coords (tuple), or None for auto."""
+
+    cmap: str | None = None
+    """Colormap name. Defaults to 'tab10' for <=10 ROIs, 'tab20' for more."""
+
+    alpha: float = 0.7
+    """Overlay opacity (0=transparent, 1=opaque)."""
+
+    dpi: int = 150
+    """Output image resolution."""
+
+    output_path: str | Path | None = None
+    """Destination PNG path. If None the figure is shown interactively."""
+
+    title: str | None = None
+    """Optional figure title."""
+
+
 SelectionInput = Sequence[int | str]
