@@ -25,12 +25,12 @@ def test_load_atlas_success(tmp_path: Path) -> None:
     assert atlas.labels_by_id[1] == "ROI One"
 
 
-def test_load_atlas_missing_labels_fails(tmp_path: Path) -> None:
+def test_load_atlas_missing_labels_allowed(tmp_path: Path) -> None:
     data = np.array([[[0, 1], [2, 2]]], dtype=np.int16)
     atlas_path = _write_atlas(tmp_path, data)
 
-    with pytest.raises(AtlasValidationError):
-        load_atlas(atlas_path, {1: "ROI One"})
+    atlas = load_atlas(atlas_path, {2: "ROI Two"})
+    assert atlas.labels_by_id[2] == "ROI Two"
 
 
 def test_load_atlas_non_integer_fails(tmp_path: Path) -> None:

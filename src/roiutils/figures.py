@@ -6,6 +6,8 @@ from pathlib import Path
 
 import nibabel as nib
 import numpy as np
+from matplotlib import cm
+from matplotlib.patches import Patch
 
 from .models import AtlasSpec, RenderConfig, RoiSelection
 
@@ -47,6 +49,8 @@ def plot_roi_overlay(
     n_rois = len(selection.ids)
     cmap = config.cmap or ("tab10" if n_rois <= 10 else "tab20")
 
+    discrete_cmap = cm.get_cmap(cmap, n_rois)
+
     display = plotting.plot_roi(
         roi_resampled,
         bg_img=template,
@@ -58,8 +62,27 @@ def plot_roi_overlay(
         colorbar=False,
     )
 
+    if config.show_legend:
+        labels_by_id = dict(atlas.labels_by_id)
+        labels_by_id.update(selection.labels_by_id)
+        handles = []
+        for index, roi_id in enumerate(selection.ids):
+            color = discrete_cmap(index)
+            label = labels_by_id.get(roi_id, f"ROI {roi_id}")
+            handles.append(Patch(facecolor=color, edgecolor="black", label=f"{roi_id}: {label}"))
+
+        if handles:
+            figure = display.frame_axes.figure
+            figure.legend(
+                handles=handles,
+                loc=config.legend_loc,
+                ncol=max(1, config.legend_ncol),
+                frameon=True,
+                fontsize=8,
+            )
+
     if config.output_path is not None:
-        out = Path(config.output_path)
+        out = Path(config.output_path).expanduser()
         out.parent.mkdir(parents=True, exist_ok=True)
         display.savefig(str(out), dpi=config.dpi)
         display.close()

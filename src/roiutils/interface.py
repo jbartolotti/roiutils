@@ -8,6 +8,7 @@ from typing import Mapping
 import nibabel as nib
 
 from .atlas_io import load_atlas as _load_atlas
+from .atlas_io import load_labels_tsv
 from .figures import plot_roi_overlay as _plot_roi_overlay
 from .models import AtlasSpec, RenderConfig, RoiSelection, SelectionConfig, SelectionInput
 from .roi_select import build_roi_mask as _build_roi_mask
@@ -21,7 +22,20 @@ def load_atlas(
     template_name: str = "MNI152",
 ) -> AtlasSpec:
     """Load and validate an indexed atlas and its label mapping."""
-    return _load_atlas(atlas_path, labels_by_id, template_name=template_name)
+    return _load_atlas(
+        atlas_path,
+        labels_by_id,
+        template_name=template_name,
+    )
+
+
+def load_labels(labels: str | Path | Mapping[int, str] | None) -> dict[int, str]:
+    """Load labels from a TSV path, mapping, or None."""
+    if labels is None:
+        return {}
+    if isinstance(labels, (str, Path)):
+        return load_labels_tsv(labels)
+    return dict(labels)
 
 
 def resolve_roi_selection(
@@ -50,6 +64,22 @@ def plot_roi_overlay(
     Returns the saved output path, or None if displayed interactively.
     """
     return _plot_roi_overlay(atlas, selection, config)
+
+
+def create_roi_overlay(
+    atlas_path: str | Path,
+    labels: str | Path | Mapping[int, str] | None,
+    selection: SelectionInput,
+    config: RenderConfig | None = None,
+    *,
+    strict: bool = True,
+    template_name: str = "MNI152",
+) -> Path | None:
+    """High-level helper: load atlas+labels, resolve selection, render overlay."""
+    labels_by_id = load_labels(labels)
+    atlas = load_atlas(atlas_path, labels_by_id, template_name=template_name)
+    resolved = resolve_roi_selection(atlas, selection, strict=strict)
+    return plot_roi_overlay(atlas, resolved, config)
 
 
 class RoiWorkflow:

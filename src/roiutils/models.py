@@ -59,5 +59,14 @@ class RenderConfig:
     title: str | None = None
     """Optional figure title."""
 
+    show_legend: bool = False
+    """Whether to draw a ROI legend on the output figure."""
+
+    legend_loc: str = "lower center"
+    """Matplotlib legend location string."""
+
+    legend_ncol: int = 2
+    """Number of legend columns."""
+
 
 SelectionInput = Sequence[int | str]

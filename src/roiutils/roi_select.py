@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import warnings
 
 import nibabel as nib
 import numpy as np
@@ -17,39 +17,52 @@ def resolve_roi_selection(
     *,
     config: SelectionConfig | None = None,
 ) -> RoiSelection:
-    """Resolve mixed ROI identifiers (IDs or labels) into atlas IDs."""
+    """Resolve mixed ROI identifiers (IDs or labels) into atlas IDs.
+
+    Numeric ROI IDs are treated as direct atlas indices and do not require a
+    label mapping entry. Label-name selectors must exist in atlas.labels_by_id.
+    """
     config = config or SelectionConfig()
     label_to_id = {label.lower(): roi_id for roi_id, label in atlas.labels_by_id.items()}
 
     resolved: list[int] = []
-    missing: list[str] = []
+    missing_labels: list[str] = []
 
     for item in selection:
-        roi_id: int | None
         if isinstance(item, int):
-            roi_id = item if item in atlas.labels_by_id else None
-            missing_token = str(item)
+            resolved.append(item)
+            continue
         elif isinstance(item, str):
             normalized = item.strip().lower()
             roi_id = label_to_id.get(normalized)
-            missing_token = item
+            if roi_id is None:
+                missing_labels.append(item)
+                continue
+            resolved.append(roi_id)
         else:
             raise RoiSelectionError(f"Unsupported ROI selector type: {type(item)!r}")
 
-        if roi_id is None:
-            missing.append(missing_token)
-            continue
-
-        resolved.append(roi_id)
-
     unique_ids = tuple(sorted(set(resolved)))
-    if missing and config.strict:
-        missing_text = ", ".join(missing)
-        raise RoiSelectionError(f"Could not resolve ROI selector(s): {missing_text}")
+    if missing_labels:
+        missing_text = ", ".join(missing_labels)
+        raise RoiSelectionError(
+            f"Could not resolve ROI label selector(s): {missing_text}"
+        )
     if not unique_ids:
         raise RoiSelectionError("No ROI IDs were resolved from selection input.")
 
-    selected_labels = {roi_id: atlas.labels_by_id[roi_id] for roi_id in unique_ids}
+    unlabeled_ids = [roi_id for roi_id in unique_ids if roi_id not in atlas.labels_by_id]
+    if unlabeled_ids:
+        warnings.warn(
+            "Selected ROI IDs missing label entries: "
+            + ", ".join(str(x) for x in unlabeled_ids)
+            + ". Using numeric IDs directly.",
+            stacklevel=2,
+        )
+
+    selected_labels = {
+        roi_id: atlas.labels_by_id.get(roi_id, f"ROI {roi_id}") for roi_id in unique_ids
+    }
     return RoiSelection(ids=unique_ids, labels_by_id=selected_labels)
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Mapping
 
 import nibabel as nib
 import numpy as np
@@ -18,8 +18,8 @@ def load_atlas(
     *,
     template_name: str = "MNI152",
 ) -> AtlasSpec:
-    """Load an atlas image and validate IDs against provided labels."""
-    atlas_path = Path(atlas_path)
+    """Load an atlas image and validate label-image format consistency."""
+    atlas_path = Path(atlas_path).expanduser()
     image = nib.load(str(atlas_path))
     atlas = AtlasSpec(
         image=image,
@@ -41,18 +41,13 @@ def validate_atlas(atlas: AtlasSpec) -> None:
     if not np.allclose(data, rounded):
         raise AtlasValidationError("Atlas image must contain integer label values.")
 
-    ids_in_image = _non_background_ids(rounded)
-    missing = [roi_id for roi_id in ids_in_image if roi_id not in atlas.labels_by_id]
-    if missing:
-        missing_text = ", ".join(str(x) for x in missing[:10])
-        raise AtlasValidationError(
-            f"Atlas labels are missing IDs present in image: {missing_text}"
-        )
+    # Label dictionaries may intentionally enumerate only a subset of atlas IDs.
+    # Selection logic handles missing names explicitly when users select by label.
 
 
 def load_labels_tsv(path: str | Path) -> dict[int, str]:
     """Load atlas label metadata from a TSV with columns: id and label."""
-    path = Path(path)
+    path = Path(path).expanduser()
     lines = path.read_text(encoding="utf-8").splitlines()
     if not lines:
         raise AtlasValidationError("Labels TSV is empty.")
