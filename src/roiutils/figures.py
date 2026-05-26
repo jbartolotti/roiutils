@@ -168,50 +168,117 @@ def _validate_render_config(config: RenderConfig) -> None:
             )
 
 
-def _plot_quadrants(roi_img, template, config: RenderConfig, cmap: str, legend_handles: list[Patch]):
+def _render_slice_to_array(roi_img, template, axis_name, coord, cmap, alpha, annotate, draw_cross):
+    """Render one slice to a numpy RGB array via an off-screen Agg canvas."""
     from nilearn import plotting
 
+    fig = Figure(figsize=(6, 6), dpi=200, facecolor="black")
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_axes([0, 0, 1, 1], facecolor="black")
+
+    plotting.plot_roi(
+        roi_img,
+        bg_img=template,
+        display_mode=axis_name,
+        cut_coords=[coord],
+        cmap=cmap,
+        alpha=alpha,
+        colorbar=False,
+        axes=ax,
+        annotate=annotate,
+        draw_cross=draw_cross,
+        black_bg=True,
+    )
+
+    canvas.draw()
+    w, h = canvas.get_width_height()
+    buf = np.frombuffer(canvas.buffer_rgba(), dtype=np.uint8).reshape(h, w, 4)
+    return buf[:, :, :3].copy()
+
+
+def _crop_black_border(img: np.ndarray, margin: int = 10) -> np.ndarray:
+    """Remove near-black borders, leaving a small pixel margin."""
+    mask = np.any(img > 15, axis=2)
+    rows = np.where(mask.any(axis=1))[0]
+    cols = np.where(mask.any(axis=0))[0]
+    if not len(rows) or not len(cols):
+        return img
+    r0 = max(0, rows[0] - margin)
+    r1 = min(img.shape[0], rows[-1] + margin + 1)
+    c0 = max(0, cols[0] - margin)
+    c1 = min(img.shape[1], cols[-1] + margin + 1)
+    return img[r0:r1, c0:c1]
+
+
+def _pad_to_size(img: np.ndarray, target_h: int, target_w: int) -> np.ndarray:
+    """Center the image on a black canvas of target size."""
+    out = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+    h, w = img.shape[:2]
+    r0 = (target_h - h) // 2
+    c0 = (target_w - w) // 2
+    out[r0 : r0 + h, c0 : c0 + w] = img
+    return out
+
+
+def _plot_quadrants(roi_img, template, config: RenderConfig, cmap: str, legend_handles: list[Patch]):
     slices = list(config.quadrant_slices or (("x", -10), ("y", 20), ("z", 8)))
-    if len(slices) != 3:
-        raise ValueError("quadrant_slices must contain exactly three (axis, coord) pairs.")
 
-    figure = Figure(figsize=(12, 10), facecolor="white")
-    FigureCanvasAgg(figure)
-    axes = figure.subplots(2, 2)
-    flat_axes = axes.flatten()
-
-    for axis_obj, (axis_name, coord) in zip(flat_axes[:3], slices):
-        display = plotting.plot_roi(
-            roi_img,
-            bg_img=template,
-            display_mode=axis_name,
-            cut_coords=[coord],
-            cmap=cmap,
-            alpha=config.alpha,
-            colorbar=False,
-            axes=axis_obj,
-            annotate=not config.clean,
-            draw_cross=not config.clean,
+    # 1. Render each slice independently and crop black borders.
+    arrays = []
+    for axis_name, coord in slices:
+        arr = _render_slice_to_array(
+            roi_img, template, axis_name, coord,
+            cmap, config.alpha, not config.clean, not config.clean,
         )
+        arrays.append(_crop_black_border(arr, margin=10))
 
-    legend_ax = flat_axes[3]
+    # 2. Uniform panel size: bounding box that fits all three slices.
+    max_h = max(a.shape[0] for a in arrays)
+    max_w = max(a.shape[1] for a in arrays)
+    padded = [_pad_to_size(a, max_h, max_w) for a in arrays]
+
+    # 3. Figure size driven purely by panel proportions — no extra whitespace.
+    panel_w_in = 5.5
+    panel_h_in = panel_w_in * (max_h / max_w)
+    figure = Figure(figsize=(panel_w_in * 2, panel_h_in * 2), facecolor="white")
+    FigureCanvasAgg(figure)
+
+    gs = figure.add_gridspec(2, 2, wspace=0, hspace=0, left=0, right=1, top=1, bottom=0)
+    ax_list = [figure.add_subplot(gs[r, c]) for r, c in [(0, 0), (0, 1), (1, 0), (1, 1)]]
+
+    # 4. Place brain images.
+    for ax, img in zip(ax_list[:3], padded):
+        ax.imshow(img, aspect="auto", interpolation="bilinear")
+        ax.set_axis_off()
+
+    # 5. Legend panel — always single column, sized so 10 rows fill the quadrant.
+    legend_ax = ax_list[3]
     legend_ax.set_facecolor("white")
-    legend_ax.set_xticks([])
-    legend_ax.set_yticks([])
-    for spine in legend_ax.spines.values():
-        spine.set_visible(False)
-    if config.title:
-        figure.suptitle(config.title)
+    legend_ax.set_axis_off()
+
     if config.show_legend and legend_handles:
+        n_items = len(legend_handles)
+        # Font size calculated so 10 rows fill the panel; shrink only if >10 items.
+        rows_for_sizing = max(n_items, 10)
+        # Empirical line factor: each row occupies ~2.0× fontsize in points
+        fontsize = (panel_h_in * 72) / (rows_for_sizing * 2.0)
+        fontsize = max(5.0, min(fontsize, 24.0))
+
         legend_ax.legend(
             handles=legend_handles,
             loc="center",
-            ncol=max(1, config.legend_ncol),
+            ncol=1,
             frameon=True,
-            fontsize=9,
+            fontsize=fontsize,
+            handlelength=1.2,
+            handleheight=0.8,
+            borderpad=0.8,
+            labelspacing=0.5,
         )
 
-    figure.tight_layout()
+    if config.title:
+        figure.suptitle(config.title, fontsize=12)
+
     return figure
 
 
