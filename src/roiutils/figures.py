@@ -7,7 +7,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import nibabel as nib
 import numpy as np
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib import cm
+from matplotlib.figure import Figure
 from matplotlib.patches import Patch
 
 from .models import AtlasSpec, RenderConfig, RoiSelection
@@ -133,7 +135,9 @@ def _plot_quadrants(roi_img, template, config: RenderConfig, cmap: str, legend_h
     if len(slices) != 3:
         raise ValueError("quadrant_slices must contain exactly three (axis, coord) pairs.")
 
-    figure, axes = plt.subplots(2, 2, figsize=(12, 10), facecolor="white")
+    figure = Figure(figsize=(12, 10), facecolor="white")
+    FigureCanvasAgg(figure)
+    axes = figure.subplots(2, 2)
     flat_axes = axes.flatten()
 
     for axis_obj, (axis_name, coord) in zip(flat_axes[:3], slices):
@@ -176,7 +180,9 @@ def _plot_xyz_strips(roi_img, template, config: RenderConfig, cmap: str):
     from nilearn import plotting
 
     strip_cut_coords = dict(config.strip_cut_coords or {})
-    figure, axes = plt.subplots(3, 1, figsize=(14, 12), facecolor="white")
+    figure = Figure(figsize=(14, 12), facecolor="white")
+    FigureCanvasAgg(figure)
+    axes = figure.subplots(3, 1)
 
     for axis_obj, axis_name in zip(axes, ("z", "x", "y")):
         axis_cuts = strip_cut_coords.get(axis_name, config.cut_coords)
