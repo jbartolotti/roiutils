@@ -38,6 +38,9 @@ class SelectionConfig:
 class RenderConfig:
     """Configuration for ROI overlay rendering."""
 
+    figure_style: str = "standard"
+    """Figure layout: 'standard', 'quadrants', or 'xyz_strips'."""
+
     display_mode: str = "z"
     """Slice plane(s): 'ortho', 'x', 'y', 'z', 'tiled'."""
 
@@ -59,6 +62,12 @@ class RenderConfig:
     title: str | None = None
     """Optional figure title."""
 
+    clean: bool = False
+    """Remove anatomical left/right and slice coordinate annotations."""
+
+    template_resolution: int = 1
+    """Resolution in mm for the MNI template underlay."""
+
     show_legend: bool = False
     """Whether to draw a ROI legend on the output figure."""
 
@@ -67,6 +76,12 @@ class RenderConfig:
 
     legend_ncol: int = 2
     """Number of legend columns."""
+
+    quadrant_slices: Sequence[tuple[str, float]] | None = None
+    """Three explicit slices for the quadrant layout, e.g. [('x', -10), ('y', 20), ('z', 8)]."""
+
+    strip_cut_coords: Mapping[str, int | Sequence[float] | None] | None = None
+    """Per-axis cut coordinates for the xyz_strips layout."""
 
 
 SelectionInput = Sequence[int | str]

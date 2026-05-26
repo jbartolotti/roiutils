@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import nibabel as nib
 import numpy as np
 from matplotlib import cm
@@ -30,8 +31,7 @@ def plot_roi_overlay(
 
     config = config or RenderConfig()
 
-    # MNI152 background template (2 mm isotropic)
-    template = datasets.load_mni152_template(resolution=2)
+    template = datasets.load_mni152_template(resolution=config.template_resolution)
 
     # Build a labeled image: remap selected IDs to sequential 1..N so the
     # chosen colormap produces evenly distributed, distinct colors regardless
@@ -48,8 +48,35 @@ def plot_roi_overlay(
 
     n_rois = len(selection.ids)
     cmap = config.cmap or ("tab10" if n_rois <= 10 else "tab20")
+    discrete_cmap = cm.get_cmap(cmap, max(n_rois, 1))
+    legend_handles = _build_legend_handles(atlas, selection, discrete_cmap)
 
-    discrete_cmap = cm.get_cmap(cmap, n_rois)
+    if config.figure_style == "quadrants":
+        figure = _plot_quadrants(
+            roi_resampled,
+            template,
+            config,
+            cmap,
+            legend_handles,
+        )
+        return _finalize_figure(figure, config)
+
+    if config.figure_style == "xyz_strips":
+        figure = _plot_xyz_strips(
+            roi_resampled,
+            template,
+            config,
+            cmap,
+        )
+        if config.show_legend and legend_handles:
+            figure.legend(
+                handles=legend_handles,
+                loc=config.legend_loc,
+                ncol=max(1, config.legend_ncol),
+                frameon=True,
+                fontsize=8,
+            )
+        return _finalize_figure(figure, config)
 
     display = plotting.plot_roi(
         roi_resampled,
@@ -60,26 +87,19 @@ def plot_roi_overlay(
         alpha=config.alpha,
         title=config.title,
         colorbar=False,
+        annotate=not config.clean,
+        draw_cross=not config.clean,
     )
 
-    if config.show_legend:
-        labels_by_id = dict(atlas.labels_by_id)
-        labels_by_id.update(selection.labels_by_id)
-        handles = []
-        for index, roi_id in enumerate(selection.ids):
-            color = discrete_cmap(index)
-            label = labels_by_id.get(roi_id, f"ROI {roi_id}")
-            handles.append(Patch(facecolor=color, edgecolor="black", label=f"{roi_id}: {label}"))
-
-        if handles:
-            figure = display.frame_axes.figure
-            figure.legend(
-                handles=handles,
-                loc=config.legend_loc,
-                ncol=max(1, config.legend_ncol),
-                frameon=True,
-                fontsize=8,
-            )
+    if config.show_legend and legend_handles:
+        figure = display.frame_axes.figure
+        figure.legend(
+            handles=legend_handles,
+            loc=config.legend_loc,
+            ncol=max(1, config.legend_ncol),
+            frameon=True,
+            fontsize=8,
+        )
 
     if config.output_path is not None:
         out = Path(config.output_path).expanduser()
@@ -88,5 +108,106 @@ def plot_roi_overlay(
         display.close()
         return out
 
+    return None
+
+
+def _build_legend_handles(
+    atlas: AtlasSpec,
+    selection: RoiSelection,
+    discrete_cmap,
+) -> list[Patch]:
+    labels_by_id = dict(atlas.labels_by_id)
+    labels_by_id.update(selection.labels_by_id)
+    handles: list[Patch] = []
+    for index, roi_id in enumerate(selection.ids):
+        color = discrete_cmap(index)
+        label = labels_by_id.get(roi_id, f"ROI {roi_id}")
+        handles.append(Patch(facecolor=color, edgecolor="black", label=f"{roi_id}: {label}"))
+    return handles
+
+
+def _plot_quadrants(roi_img, template, config: RenderConfig, cmap: str, legend_handles: list[Patch]):
+    from nilearn import plotting
+
+    slices = list(config.quadrant_slices or (("x", -10), ("y", 20), ("z", 8)))
+    if len(slices) != 3:
+        raise ValueError("quadrant_slices must contain exactly three (axis, coord) pairs.")
+
+    figure, axes = plt.subplots(2, 2, figsize=(12, 10), facecolor="white")
+    flat_axes = axes.flatten()
+
+    for axis_obj, (axis_name, coord) in zip(flat_axes[:3], slices):
+        display = plotting.plot_roi(
+            roi_img,
+            bg_img=template,
+            display_mode=axis_name,
+            cut_coords=[coord],
+            cmap=cmap,
+            alpha=config.alpha,
+            colorbar=False,
+            axes=axis_obj,
+            annotate=not config.clean,
+            draw_cross=not config.clean,
+        )
+        display.close()
+
+    legend_ax = flat_axes[3]
+    legend_ax.set_facecolor("white")
+    legend_ax.set_xticks([])
+    legend_ax.set_yticks([])
+    for spine in legend_ax.spines.values():
+        spine.set_visible(False)
+    if config.title:
+        figure.suptitle(config.title)
+    if config.show_legend and legend_handles:
+        legend_ax.legend(
+            handles=legend_handles,
+            loc="center",
+            ncol=max(1, config.legend_ncol),
+            frameon=True,
+            fontsize=9,
+        )
+
+    figure.tight_layout()
+    return figure
+
+
+def _plot_xyz_strips(roi_img, template, config: RenderConfig, cmap: str):
+    from nilearn import plotting
+
+    strip_cut_coords = dict(config.strip_cut_coords or {})
+    figure, axes = plt.subplots(3, 1, figsize=(14, 12), facecolor="white")
+
+    for axis_obj, axis_name in zip(axes, ("z", "x", "y")):
+        axis_cuts = strip_cut_coords.get(axis_name, config.cut_coords)
+        display = plotting.plot_roi(
+            roi_img,
+            bg_img=template,
+            display_mode=axis_name,
+            cut_coords=axis_cuts,
+            cmap=cmap,
+            alpha=config.alpha,
+            colorbar=False,
+            axes=axis_obj,
+            annotate=not config.clean,
+            draw_cross=False,
+        )
+        display.close()
+
+    if config.title:
+        figure.suptitle(config.title)
+    figure.tight_layout()
+    return figure
+
+
+def _finalize_figure(figure, config: RenderConfig) -> Path | None:
+    if config.output_path is not None:
+        out = Path(config.output_path).expanduser()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(str(out), dpi=config.dpi, bbox_inches="tight", facecolor="white")
+        plt.close(figure)
+        return out
+
+    figure.show()
     return None
 
