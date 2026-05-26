@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import warnings
 
 import matplotlib.pyplot as plt
 import nibabel as nib
@@ -32,6 +33,7 @@ def plot_roi_overlay(
     from nilearn.image import resample_to_img
 
     config = config or RenderConfig()
+    _validate_render_config(config)
 
     template = datasets.load_mni152_template(resolution=config.template_resolution)
 
@@ -39,6 +41,15 @@ def plot_roi_overlay(
     # chosen colormap produces evenly distributed, distinct colors regardless
     # of the raw atlas ID values (which may be sparse, e.g. 3, 47, 112).
     atlas_data = np.rint(atlas.image.get_fdata()).astype(np.int32)
+    missing_ids = [roi_id for roi_id in selection.ids if not np.any(atlas_data == roi_id)]
+    if missing_ids:
+        warnings.warn(
+            "Selected ROI IDs not found in atlas image: "
+            + ", ".join(str(x) for x in missing_ids)
+            + ". They will not appear in the rendered figure.",
+            stacklevel=2,
+        )
+
     labeled = np.zeros_like(atlas_data, dtype=np.int32)
     for rank, roi_id in enumerate(selection.ids, start=1):
         labeled[atlas_data == roi_id] = rank
@@ -128,6 +139,35 @@ def _build_legend_handles(
     return handles
 
 
+def _validate_render_config(config: RenderConfig) -> None:
+    valid_styles = {"standard", "quadrants", "xyz_strips"}
+    if config.figure_style not in valid_styles:
+        raise ValueError(
+            f"Unsupported figure_style '{config.figure_style}'. Expected one of: {', '.join(sorted(valid_styles))}."
+        )
+
+    if config.template_resolution not in {1, 2}:
+        raise ValueError("template_resolution must be 1 or 2 mm for the MNI template.")
+
+    if config.figure_style == "quadrants":
+        slices = list(config.quadrant_slices or (("x", -10), ("y", 20), ("z", 8)))
+        if len(slices) != 3:
+            raise ValueError("quadrant_slices must contain exactly three (axis, coord) pairs.")
+
+        for axis_name, coord in slices:
+            if axis_name not in {"x", "y", "z"}:
+                raise ValueError("quadrant_slices axes must be 'x', 'y', or 'z'.")
+            if not isinstance(coord, (int, float)):
+                raise ValueError("quadrant_slices coordinates must be numeric.")
+
+    if config.strip_cut_coords is not None:
+        invalid_axes = set(config.strip_cut_coords) - {"x", "y", "z"}
+        if invalid_axes:
+            raise ValueError(
+                "strip_cut_coords keys must be limited to 'x', 'y', and 'z'."
+            )
+
+
 def _plot_quadrants(roi_img, template, config: RenderConfig, cmap: str, legend_handles: list[Patch]):
     from nilearn import plotting
 
@@ -153,7 +193,6 @@ def _plot_quadrants(roi_img, template, config: RenderConfig, cmap: str, legend_h
             annotate=not config.clean,
             draw_cross=not config.clean,
         )
-        display.close()
 
     legend_ax = flat_axes[3]
     legend_ax.set_facecolor("white")
@@ -198,7 +237,6 @@ def _plot_xyz_strips(roi_img, template, config: RenderConfig, cmap: str):
             annotate=not config.clean,
             draw_cross=False,
         )
-        display.close()
 
     if config.title:
         figure.suptitle(config.title)
